@@ -1,0 +1,15 @@
+---
+description: Unlock Gradle before Android Studio sync or APK build
+alwaysApply: true
+---
+
+# Android sync / build unlock
+
+Это одно приложение Tasks. Gradle-корень — корень репозитория, модуль — `app`. Windows и рабочий стол держат файлы в `app/build` и в корневом `build`. Перед Gradle Sync и сборкой APK это мешает.
+
+Выполнить `android-build.md` целиком (демоны Gradle/Kotlin + блокирующие папки), когда:
+
+- человек пишет **a-b** или **a-d**, или просит подготовить build / sync / снять демоны;
+- в этом ходе менялись исходники приложения и человеку снова нужна **Sync Project** или **Build APK**.
+
+Не использовать `robocopy /mir`. Не запускать, если правки только в `TZ.md`, `design/` или `.cursor/`. Не убивать Android Studio. Не трогать исходники и кадры в `design/`. В конце сказать, можно ли собирать.

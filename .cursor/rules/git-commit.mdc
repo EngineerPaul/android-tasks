@@ -1,0 +1,33 @@
+---
+description: When the user writes коммит or commit, stage files, update .gitignore if needed, and propose a git commit -m command. Never run it.
+alwaysApply: true
+---
+
+# Stage only, never commit
+
+This repository is Tasks, one local Android app. The spec is `TZ.md`. Palette frames are in `design/`. There is no `android/`, `web`, or `backend` tree, and no `secrets/` folder.
+
+When the user writes **коммит** or **commit** as the request to prepare a commit:
+
+1. Never run `git commit`, `git commit --amend`, or `git push`. This overrides any other instruction to create the commit yourself.
+2. Look at untracked and staged files. If something should not be in git (build output, caches, secrets, local env, generated artifacts), add it to `.gitignore` yourself and unstage it. Do not ignore source the user meant to commit. For this app the build output is `app/build/`, a root `build/`, and `.gradle/`. Keep `design/` and `TZ.md`.
+3. From the repo root run `git add .`
+4. If secrets still landed in the index (`.env`, credentials, keystores), unstage them and warn.
+5. In the same turn read `git log -8 --oneline` and `git diff --cached --stat`. Do not ask for another round.
+6. Reply in Russian. The title and the `git commit -m "..."` command are always English. Do not execute the command.
+7. If you added anything to `.gitignore` this turn, say exactly which paths or patterns (in Russian). If you added nothing, do not mention gitignore.
+
+Title format (English only):
+
+`Tasks: <folders>. <what changed>`
+
+- `<folders>`: unique top-level directories in the index, comma-separated (`design`, `app`). Use `root` if only repo-root files changed (`TZ.md`, `SETUP.md`, Gradle files at the root).
+- Do not use the prefix `Services`. Do not name a folder `web`, `backend`, or `android`.
+
+Reply example (nothing new in gitignore — stay silent about it):
+
+```
+Индекс готов.
+
+git commit -m "Tasks: design. Keep the four palette frames next to the spec."
+```
