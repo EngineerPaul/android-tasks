@@ -10,13 +10,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -25,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -48,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -93,7 +99,9 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
     val initialDue = existing?.nextFireAt ?: DueRules.defaultDue(System.currentTimeMillis())
     var due by remember(taskId) { mutableLongStateOf(initialDue) }
     var repeatText by remember(taskId) { mutableStateOf(existing?.repeatEveryDays?.toString().orEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var titleErrorText by remember { mutableStateOf<String?>(null) }
+    var dueErrorText by remember { mutableStateOf<String?>(null) }
+    var repeatErrorText by remember { mutableStateOf<String?>(null) }
     var linkError by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showDate by remember { mutableStateOf(false) }
@@ -107,6 +115,48 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
     val context = LocalContext.current
     val group = groups.firstOrNull { it.id == groupId }
     val scheduled = kind == GroupKind.SCHEDULED
+    val titleMissing = stringResource(R.string.error_title)
+    val gapError = stringResource(R.string.error_gap)
+    val repeatInvalid = stringResource(R.string.error_repeat)
+    fun confirm() {
+        val trimmed = title.trim()
+        titleErrorText = null
+        dueErrorText = null
+        repeatErrorText = null
+        if (trimmed.isEmpty()) titleErrorText = titleMissing
+        var fire: Long? = null
+        var repeat: Int? = null
+        if (scheduled) {
+            val parsed = due
+            val now = System.currentTimeMillis()
+            val floor = DueRules.earliest(now)
+            val unchangedPast = existing?.nextFireAt == parsed && parsed < floor
+            when {
+                parsed >= floor || unchangedPast -> fire = parsed
+                parsed == lastLegal.longValue -> fire = floor
+                else -> dueErrorText = gapError
+            }
+            if (repeatText.isNotEmpty()) {
+                val days = repeatText.toIntOrNull()
+                if (days == null || days < RepeatDays.MIN || days > RepeatDays.MAX) {
+                    repeatErrorText = repeatInvalid
+                } else {
+                    repeat = days
+                }
+            }
+        }
+        if (titleErrorText != null || dueErrorText != null || repeatErrorText != null) return
+        vm.save(existing?.id, TaskDraft(groupId, trimmed, description, rating, fire, repeat))
+    }
+    fun shiftRepeat(delta: Int) {
+        val current = repeatText.toIntOrNull()
+        repeatText = when {
+            delta > 0 && current == null -> "1"
+            delta < 0 && (current == null || current <= RepeatDays.MIN) -> ""
+            current == null -> ""
+            else -> (current + delta).coerceIn(RepeatDays.MIN, RepeatDays.MAX).toString()
+        }
+    }
 
     BackHandler { vm.closeEditor() }
     LaunchedEffect(linkError) {
@@ -127,8 +177,16 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
             onGroup = { id -> vm.leaveToGroup(id) },
             onSettings = vm::leaveToSettings,
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp).clickable { vm.closeEditor() }, contentAlignment = Alignment.Center) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(palette.cloud)
+                    .border(1.dp, palette.cloudBorder, CircleShape)
+                    .clickable { vm.closeEditor() },
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.back), tint = TasksColors.text)
             }
             Text(
@@ -137,23 +195,45 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
                 fontFamily = Manrope,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 18.sp,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
-            Box(Modifier.size(48.dp).clickable {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(palette.accent)
+                    .clickable { confirm() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Check, stringResource(R.string.save), tint = palette.onAccent)
+            }
+            Box(Modifier.padding(start = 8.dp).size(40.dp).clickable {
                 if (existing != null) vm.deleteTask(existing) else vm.closeEditor()
             }, contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Delete, stringResource(R.string.delete), tint = TasksColors.delete)
             }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             FieldLabel(stringResource(R.string.field_title))
-            BasicTextField(
-                value = title,
-                onValueChange = { if (it.length <= 500) title = it },
-                textStyle = androidx.compose.ui.text.TextStyle(color = TasksColors.text, fontFamily = Manrope, fontSize = 16.sp),
-                cursorBrush = SolidColor(palette.accent),
-                modifier = Modifier.fillMaxWidth().background(palette.cloud, RoundedCornerShape(12.dp)).padding(12.dp),
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = title,
+                    onValueChange = {
+                        if (it.length <= 500) title = it
+                        titleErrorText = null
+                    },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = TasksColors.text, fontFamily = Manrope, fontSize = 16.sp),
+                    cursorBrush = SolidColor(palette.accent),
+                    modifier = Modifier.weight(1f).background(palette.cloud, RoundedCornerShape(12.dp)).padding(12.dp),
+                )
+                Box(Modifier.padding(start = 8.dp)) {
+                    RatingStars(rating, palette.accent, TasksColors.muted) { rating = it }
+                }
+            }
+            titleErrorText?.let { FieldError(it) }
             FieldLabel(stringResource(R.string.field_group))
             Box {
                 Text(
@@ -193,89 +273,66 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
                 )
             }
             if (linkError) Text(stringResource(R.string.link_failed), color = TasksColors.error, fontFamily = Manrope, fontSize = 13.sp)
-            RatingStars(rating, palette.accent, TasksColors.muted) { rating = it }
             if (scheduled) {
-                val now = System.currentTimeMillis()
-                Stepper(DueRules.formatDate(due), DueRules.shiftDay(due, -1, now) != null, true, {
-                    DueRules.shiftDay(due, -1, now)?.let { applyDue(it) }
-                }) {
-                    DueRules.shiftDay(due, 1, now)?.let { applyDue(it) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        DueRules.formatDate(due),
+                        color = TasksColors.text,
+                        fontFamily = Manrope,
+                        fontSize = 16.sp,
+                        modifier = Modifier.weight(1f).background(palette.cloud, RoundedCornerShape(12.dp)).clickable {
+                            dueErrorText = null
+                            showDate = true
+                        }.padding(12.dp),
+                    )
+                    Text(
+                        DueRules.formatTime(due),
+                        color = TasksColors.text,
+                        fontFamily = Manrope,
+                        fontSize = 16.sp,
+                        modifier = Modifier.weight(1f).background(palette.cloud, RoundedCornerShape(12.dp)).clickable {
+                            dueErrorText = null
+                            showTime = true
+                        }.padding(12.dp),
+                    )
                 }
-                Text(stringResource(R.string.field_title), color = palette.accent, fontFamily = Manrope, modifier = Modifier.clickable { showDate = true })
-                Stepper(DueRules.formatTime(due), DueRules.canShiftHourLeft(due, now), true, {
-                    applyDue(DueRules.shiftHour(due, -1, now))
-                }) {
-                    applyDue(DueRules.shiftHour(due, 1, now))
-                }
-                Text("00:00", color = palette.accent, fontFamily = Manrope, modifier = Modifier.clickable { showTime = true })
+                dueErrorText?.let { FieldError(it) }
                 FieldLabel(stringResource(R.string.field_repeat))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        null,
+                        tint = if (repeatText.isNotEmpty()) TasksColors.text else TasksColors.muted,
+                        modifier = Modifier.size(40.dp).clickable(enabled = repeatText.isNotEmpty()) {
+                            shiftRepeat(-1)
+                            repeatErrorText = null
+                        },
+                    )
                     BasicTextField(
                         value = repeatText,
-                        onValueChange = { value -> repeatText = value.filter { it.isDigit() }.take(3) },
+                        onValueChange = { value ->
+                            repeatText = value.filter { it.isDigit() }.take(3)
+                            repeatErrorText = null
+                        },
                         textStyle = androidx.compose.ui.text.TextStyle(color = TasksColors.text, fontFamily = Manrope, fontSize = 16.sp),
                         cursorBrush = SolidColor(palette.accent),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.width(72.dp).background(palette.cloud, RoundedCornerShape(12.dp)).padding(12.dp),
                     )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        null,
+                        tint = if ((repeatText.toIntOrNull() ?: 0) < RepeatDays.MAX) TasksColors.text else TasksColors.muted,
+                        modifier = Modifier.size(40.dp).clickable(enabled = (repeatText.toIntOrNull() ?: 0) < RepeatDays.MAX) {
+                            shiftRepeat(1)
+                            repeatErrorText = null
+                        },
+                    )
                     Text(stringResource(R.string.repeat_unit), color = TasksColors.secondary, fontFamily = Manrope, modifier = Modifier.padding(start = 8.dp))
                 }
+                repeatErrorText?.let { FieldError(it) }
                 Text(stringResource(R.string.repeat_help), color = TasksColors.muted, fontFamily = Manrope, fontSize = 12.sp)
             }
-            error?.let { Text(it, color = TasksColors.error, fontFamily = Manrope) }
-        }
-        val saveLabel = stringResource(if (existing == null) R.string.add else R.string.save)
-        val titleError = stringResource(R.string.error_title)
-        val dateError = stringResource(R.string.error_date)
-        val timeError = stringResource(R.string.error_time)
-        val gapError = stringResource(R.string.error_gap)
-        val repeatError = stringResource(R.string.error_repeat)
-        Box(
-            Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
-                .height(48.dp)
-                .background(palette.accent, RoundedCornerShape(16.dp))
-                .clickable {
-                    val trimmed = title.trim()
-                    if (trimmed.isEmpty()) {
-                        error = titleError
-                        return@clickable
-                    }
-                    var fire: Long? = null
-                    var repeat: Int? = null
-                    if (scheduled) {
-                        val parsed = due
-                        val now = System.currentTimeMillis()
-                        val floor = DueRules.earliest(now)
-                        val unchangedPast = existing?.nextFireAt == parsed && parsed < floor
-                        fire = when {
-                            parsed >= floor || unchangedPast -> parsed
-                            parsed == lastLegal.longValue -> floor
-                            else -> {
-                                error = gapError
-                                return@clickable
-                            }
-                        }
-                        if (repeatText.isNotEmpty()) {
-                            val days = repeatText.toIntOrNull()
-                            if (days == null || days < RepeatDays.MIN || days > RepeatDays.MAX) {
-                                error = repeatError
-                                return@clickable
-                            }
-                            repeat = days
-                        }
-                        if (fire == null) {
-                            error = dateError
-                            return@clickable
-                        }
-                    }
-                    error = null
-                    vm.save(existing?.id, TaskDraft(groupId, trimmed, description, rating, fire, repeat))
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(saveLabel, color = palette.onAccent, fontFamily = Manrope, fontWeight = FontWeight.SemiBold)
         }
     }
 
@@ -319,22 +376,8 @@ private fun FieldLabel(text: String) {
 }
 
 @Composable
-private fun Stepper(value: String, leftEnabled: Boolean, rightEnabled: Boolean, onLeft: () -> Unit, onRight: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-            null,
-            tint = if (leftEnabled) TasksColors.text else TasksColors.muted,
-            modifier = Modifier.size(40.dp).clickable(enabled = leftEnabled, onClick = onLeft),
-        )
-        Text(value, color = TasksColors.text, fontFamily = Manrope, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 8.dp))
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            null,
-            tint = if (rightEnabled) TasksColors.text else TasksColors.muted,
-            modifier = Modifier.size(40.dp).clickable(enabled = rightEnabled, onClick = onRight),
-        )
-    }
+private fun FieldError(text: String) {
+    Text(text, color = TasksColors.error, fontFamily = Manrope, fontSize = 13.sp)
 }
 
 private fun descriptionReady(scheduled: Boolean): Boolean = scheduled

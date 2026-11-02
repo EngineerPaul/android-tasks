@@ -5,7 +5,7 @@
     <string name="add">Добавить</string>
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>
-    <string name="empty_tasks">Пока нет задач</string>
+    <string name="empty_tasks">задач нет</string>
     <string name="task_title">Задача %1$d</string>
     <string name="reminder_title">Напоминание %1$d</string>
     <string name="reminder_plain">Напоминание</string>
@@ -36,6 +36,7 @@
     <string name="kind_reminders">Напоминания</string>
     <string name="window_name">Имя окна</string>
     <string name="add_window">Добавить окно</string>
+    <string name="new_window">Новое окно</string>
     <string name="delete_window">Удалить окно «%1$s» вместе с задачами?</string>
     <string name="delete_confirm">Удалить</string>
     <string name="language">Язык</string>

@@ -30,8 +30,8 @@ object Palettes {
     val amber = TasksPalette(
         id = "amber",
         background = Color(0xFF120C06),
-        cloud = Color(0xFF101010),
-        cloudBorder = Color(0xFF2A2623),
+        cloud = Color(0xFF3A3128),
+        cloudBorder = Color(0xFF5A4C40),
         accent = Color(0xFFD87404),
         onAccent = Color(0xFF1A1408),
         newRow = Color(0xFF2A2623),
@@ -39,8 +39,8 @@ object Palettes {
     val teal = TasksPalette(
         id = "teal",
         background = Color(0xFF031217),
-        cloud = Color(0xFF111A21),
-        cloudBorder = Color(0xFF1E333C),
+        cloud = Color(0xFF244652),
+        cloudBorder = Color(0xFF3A6270),
         accent = Color(0xFF086C86),
         onAccent = Color(0xFFF4FBFC),
         newRow = Color(0xFF1A3038),
@@ -48,8 +48,8 @@ object Palettes {
     val violet = TasksPalette(
         id = "violet",
         background = Color(0xFF140E1A),
-        cloud = Color(0xFF1E1625),
-        cloudBorder = Color(0xFF322838),
+        cloud = Color(0xFF3A2C48),
+        cloudBorder = Color(0xFF544068),
         accent = Color(0xFF754DC8),
         onAccent = Color(0xFF160E22),
         newRow = Color(0xFF32243E),
@@ -57,8 +57,8 @@ object Palettes {
     val coral = TasksPalette(
         id = "coral",
         background = Color(0xFF18100D),
-        cloud = Color(0xFF2C1E15),
-        cloudBorder = Color(0xFF3E2C22),
+        cloud = Color(0xFF4A342A),
+        cloudBorder = Color(0xFF6A4C40),
         accent = Color(0xFFE55E40),
         onAccent = Color(0xFF1A0E0A),
         newRow = Color(0xFF3E2A20),

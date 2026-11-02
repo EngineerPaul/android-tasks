@@ -41,7 +41,7 @@ class TasksRepository(
 
     suspend fun deleteGroup(id: Long) {
         val group = dao.groups().firstOrNull { it.id == id } ?: return
-        if (group.builtIn) return
+        if (group.isPinnedScheduled()) return
         dao.tasks().filter { it.groupId == id }.forEach { TaskAlarm.cancel(context, it.id) }
         dao.deleteGroup(id)
     }

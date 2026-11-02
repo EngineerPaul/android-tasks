@@ -2,6 +2,8 @@ package com.tasks.notebook.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -26,12 +29,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -60,9 +69,13 @@ fun SettingsScreen(vm: AppViewModel) {
     var renameText by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<TaskGroup?>(null) }
     var themeOpen by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(palette.background).statusBarsPadding()) {
         NavBar(scrollable, pinned, null, settings = true, onGroup = vm::openGroup, onSettings = {})
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState(), enabled = !dragging).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ChecklistMark(palette.accent, palette.background, 40.dp)
                 Column(Modifier.padding(start = 12.dp)) {
@@ -74,21 +87,30 @@ fun SettingsScreen(vm: AppViewModel) {
                 WindowRow(group, draggable = true, onRename = {
                     rename = group
                     renameText = group.name
-                }, onDelete = { pendingDelete = group }, onUp = {
-                    if (index == 0) return@WindowRow
+                }, onDelete = { pendingDelete = group }, onShift = { dir ->
                     val ids = scrollable.map { it.id }.toMutableList()
-                    val swap = ids[index - 1]
-                    ids[index - 1] = ids[index]
+                    val target = index + dir
+                    if (target !in ids.indices) return@WindowRow
+                    val swap = ids[target]
+                    ids[target] = ids[index]
                     ids[index] = swap
                     vm.reorderWindows(ids)
-                })
+                }, onDragging = { dragging = it })
             }
             pinned?.let { group ->
                 WindowRow(group, draggable = false, onRename = {
                     rename = group
                     renameText = group.name
-                }, onDelete = {}, onUp = {})
+                }, onDelete = {}, onShift = {}, onDragging = {})
             }
+            SectionLine()
+            Text(
+                stringResource(R.string.new_window),
+                color = TasksColors.text,
+                fontFamily = Manrope,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+            )
             Text(stringResource(R.string.window_name), color = TasksColors.secondary, fontFamily = Manrope, fontSize = 13.sp)
             BasicTextField(
                 value = name,
@@ -110,12 +132,19 @@ fun SettingsScreen(vm: AppViewModel) {
             ) {
                 Text(stringResource(R.string.add_window), color = palette.onAccent, fontFamily = Manrope, fontWeight = FontWeight.SemiBold)
             }
+            SectionLine()
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.language), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
                 Text(stringResource(R.string.language_value), color = TasksColors.secondary, fontFamily = Manrope)
             }
+            SectionLine()
             Row(
-                Modifier.fillMaxWidth().clickable { themeOpen = true }.padding(vertical = 8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.cloud)
+                    .clickable { themeOpen = true }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.theme), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
@@ -186,16 +215,83 @@ fun SettingsScreen(vm: AppViewModel) {
 }
 
 @Composable
+private fun SectionLine() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth(0.92f).height(1.dp).background(TasksColors.muted))
+    }
+}
+
+@Composable
 private fun WindowRow(
     group: TaskGroup,
     draggable: Boolean,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onUp: () -> Unit,
+    onShift: (Int) -> Unit,
+    onDragging: (Boolean) -> Unit,
 ) {
     val palette = LocalPalette.current
+    var dragY by remember(group.id) { mutableFloatStateOf(0f) }
+    val shift = rememberUpdatedState(onShift)
+    val dragFlag = rememberUpdatedState(onDragging)
     Row(
-        Modifier.fillMaxWidth().background(palette.cloud, RoundedCornerShape(12.dp)).padding(8.dp),
+        Modifier
+            .fillMaxWidth()
+            .graphicsLayer { translationY = dragY }
+            .then(
+                if (draggable) {
+                    Modifier.pointerInput(group.id) {
+                        val slop = viewConfiguration.touchSlop
+                        val timeout = viewConfiguration.longPressTimeoutMillis.toLong()
+                        val row = 56.dp.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                            val origin = down.position
+                            val started = System.currentTimeMillis()
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                                if (!change.pressed) return@awaitEachGesture
+                                if ((change.position - origin).getDistance() > slop) return@awaitEachGesture
+                                if (System.currentTimeMillis() - started >= timeout) {
+                                    change.consume()
+                                    break
+                                }
+                            }
+                            dragFlag.value(true)
+                            var accY = 0f
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
+                                    break
+                                }
+                                accY += (change.position - change.previousPosition).y
+                                change.consume()
+                                val dir = when {
+                                    accY > row -> 1
+                                    accY < -row -> -1
+                                    else -> 0
+                                }
+                                if (dir != 0) {
+                                    accY = 0f
+                                    dragY = 0f
+                                    shift.value(dir)
+                                } else {
+                                    dragY = accY
+                                }
+                            }
+                            dragY = 0f
+                            dragFlag.value(false)
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .background(palette.cloud, RoundedCornerShape(12.dp))
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (draggable) {
@@ -203,7 +299,7 @@ private fun WindowRow(
                 Icons.Outlined.DragHandle,
                 null,
                 tint = TasksColors.muted,
-                modifier = Modifier.size(28.dp).clickable(onClick = onUp),
+                modifier = Modifier.size(28.dp),
             )
         }
         Column(Modifier.weight(1f).clickable(onClick = onRename).padding(horizontal = 8.dp)) {
@@ -220,7 +316,7 @@ private fun WindowRow(
                 fontSize = 12.sp,
             )
         }
-        if (!group.builtIn) {
+        if (!group.isPinnedScheduled()) {
             androidx.compose.material3.Icon(
                 Icons.Outlined.Delete,
                 stringResource(R.string.delete),

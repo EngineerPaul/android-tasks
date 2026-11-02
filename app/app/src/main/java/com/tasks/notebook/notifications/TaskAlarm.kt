@@ -75,14 +75,13 @@ object TaskAlarm {
             open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val text = task.description.ifBlank { context.getString(R.string.notification_body) }
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_task)
             .setContentTitle(task.title)
-            .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(content)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .apply { if (task.description.isNotBlank()) setContentText(task.description) }
             .build()
         NotificationManagerCompat.from(context).notify(task.id.toInt(), notification)
     }

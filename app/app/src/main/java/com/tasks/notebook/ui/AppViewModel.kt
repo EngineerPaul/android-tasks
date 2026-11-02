@@ -153,6 +153,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.place(taskId, groupId, index) }
     }
 
+    fun commitOrder(groupId: Long, ids: List<Long>) {
+        viewModelScope.launch { repo.moveWithin(groupId, ids) }
+    }
+
     fun reorderWindows(ids: List<Long>) {
         viewModelScope.launch { repo.reorderScrollable(ids) }
     }

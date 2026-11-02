@@ -10,6 +10,8 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,11 +42,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +78,7 @@ import com.tasks.notebook.ui.theme.LocalPalette
 import com.tasks.notebook.ui.theme.Manrope
 import com.tasks.notebook.ui.theme.TasksColors
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
 
 @Composable
 fun ListScreen(vm: AppViewModel, onOpenTask: (Long?, Long) -> Unit) {
@@ -77,6 +88,7 @@ fun ListScreen(vm: AppViewModel, onOpenTask: (Long?, Long) -> Unit) {
     val scrollable = groups.filter { !it.isPinnedScheduled() }.sortedBy { it.sortOrder }
     val pinned = groups.firstOrNull { it.isPinnedScheduled() }
     val pages = scrollable + listOfNotNull(pinned)
+    var dragging by remember { mutableStateOf(false) }
     if (pages.isEmpty()) return
     val selected = (vm.screen as? com.tasks.notebook.ui.Screen.Lists)?.groupId ?: pages.first().id
     val pager = rememberPagerState(initialPage = pages.indexOfFirst { it.id == selected }.coerceAtLeast(0)) {
@@ -107,9 +119,9 @@ fun ListScreen(vm: AppViewModel, onOpenTask: (Long?, Long) -> Unit) {
         val current = pages.getOrNull(pager.currentPage) ?: pages.first()
         AccentButton(stringResource(R.string.add), palette.accent, palette.onAccent, { onOpenTask(null, current.id) })
         PermissionBanner(current.kindEnum() == GroupKind.SCHEDULED, vm)
-        HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
+        HorizontalPager(state = pager, userScrollEnabled = !dragging, modifier = Modifier.weight(1f)) { page ->
             val group = pages[page]
-            TaskPage(vm, group, orderedTasks(tasks, group), vm.highlightId, onOpenTask)
+            TaskPage(vm, pages, group, orderedTasks(tasks, group), vm.highlightId, onOpenTask) { dragging = it }
         }
     }
     UndoLayer(vm)
@@ -188,13 +200,17 @@ fun NavBar(
             }
         }
         Box(
-            Modifier.size(48.dp).clickable(onClick = onSettings),
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(if (settings) palette.accent else androidx.compose.ui.graphics.Color.Transparent)
+                .clickable(onClick = onSettings),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.cd_settings),
-                tint = if (settings) palette.accent else TasksColors.text,
+                tint = if (settings) palette.onAccent else palette.accent,
             )
         }
     }
@@ -236,10 +252,12 @@ private fun PermissionBanner(scheduled: Boolean, vm: AppViewModel) {
 @Composable
 private fun TaskPage(
     vm: AppViewModel,
+    pages: List<TaskGroup>,
     group: TaskGroup,
     tasks: List<TaskItem>,
     highlightId: Long,
     onOpenTask: (Long?, Long) -> Unit,
+    onDragging: (Boolean) -> Unit,
 ) {
     val palette = LocalPalette.current
     val listState = rememberLazyListState()
@@ -252,12 +270,15 @@ private fun TaskPage(
             vm.clearHighlight()
         }
     }
+    val latestTasks = rememberUpdatedState(tasks)
+    val latestPages = rememberUpdatedState(pages)
     if (tasks.isEmpty()) {
         Text(
             stringResource(R.string.empty_tasks),
             color = TasksColors.secondary,
             fontFamily = Manrope,
-            modifier = Modifier.padding(24.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
         )
         return
     }
@@ -273,7 +294,43 @@ private fun TaskPage(
                 animationSpec = tween(if (highlighted) 0 else 300),
                 label = "card",
             )
-            CloudCard(fill, palette.cloudBorder) {
+            var dragY by remember(task.id) { mutableFloatStateOf(0f) }
+            CloudCard(
+                fill,
+                palette.cloudBorder,
+                Modifier.graphicsLayer { translationY = dragY }.dragTask(task.id) { active, y, horizontal, shift ->
+                    onDragging(active)
+                    if (!active) {
+                        dragY = 0f
+                        return@dragTask
+                    }
+                    if (horizontal != 0) {
+                        val same = latestPages.value.filter { it.kindEnum() == group.kindEnum() }
+                        val from = same.indexOfFirst { it.id == group.id }
+                        val target = same.getOrNull(from + horizontal) ?: return@dragTask
+                        val index = latestTasks.value.indexOfFirst { it.id == task.id }.coerceAtLeast(0)
+                        dragY = 0f
+                        vm.place(task.id, target.id, index)
+                        vm.openGroup(target.id)
+                        return@dragTask
+                    }
+                    if (group.isPinnedScheduled() || shift == 0) {
+                        dragY = y
+                        return@dragTask
+                    }
+                    val items = latestTasks.value.toMutableList()
+                    val from = items.indexOfFirst { it.id == task.id }
+                    val to = from + shift
+                    if (from < 0 || to !in items.indices) {
+                        dragY = y
+                        return@dragTask
+                    }
+                    val moved = items.removeAt(from)
+                    items.add(to, moved)
+                    dragY = 0f
+                    vm.commitOrder(group.id, items.map { it.id })
+                },
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
                     onOpenTask(task.id, group.id)
                 }) {
@@ -356,6 +413,63 @@ private fun UndoLayer(vm: AppViewModel) {
                 Text(stringResource(R.string.undo), color = TasksColors.text, fontFamily = Manrope, fontWeight = FontWeight.SemiBold)
             }
         }
+    }
+}
+
+private fun Modifier.dragTask(
+    key: Long,
+    onGesture: (active: Boolean, translationY: Float, horizontal: Int, verticalShift: Int) -> Unit,
+): Modifier = pointerInput(key) {
+    val slop = viewConfiguration.touchSlop
+    val timeout = viewConfiguration.longPressTimeoutMillis.toLong()
+    val jump = 72.dp.toPx()
+    val row = 64.dp.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+        val origin = down.position
+        val started = System.currentTimeMillis()
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+            if (!change.pressed) return@awaitEachGesture
+            if ((change.position - origin).getDistance() > slop) return@awaitEachGesture
+            if (System.currentTimeMillis() - started >= timeout) {
+                change.consume()
+                break
+            }
+        }
+        onGesture(true, 0f, 0, 0)
+        var accX = 0f
+        var accY = 0f
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            if (!change.pressed) {
+                change.consume()
+                break
+            }
+            val delta = change.position - change.previousPosition
+            accX += delta.x
+            accY += delta.y
+            change.consume()
+            val horizontal = when {
+                accX > jump && abs(accX) > abs(accY) -> 1
+                accX < -jump && abs(accX) > abs(accY) -> -1
+                else -> 0
+            }
+            val vertical = when {
+                horizontal != 0 -> 0
+                accY > row -> 1
+                accY < -row -> -1
+                else -> 0
+            }
+            if (horizontal != 0 || vertical != 0) {
+                accX = 0f
+                accY = 0f
+            }
+            onGesture(true, if (horizontal == 0 && vertical == 0) accY else 0f, horizontal, vertical)
+        }
+        onGesture(false, 0f, 0, 0)
     }
 }
 
