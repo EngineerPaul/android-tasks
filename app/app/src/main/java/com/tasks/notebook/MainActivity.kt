@@ -7,6 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             val nav = rememberNavController()
+            val navScroll = rememberScrollState()
             val token = openToken.intValue
             LaunchedEffect(token) { openTask(vm, intent) }
             TasksTheme(vm.palette()) {
@@ -45,9 +47,9 @@ class MainActivity : ComponentActivity() {
                     NavHost(navController = nav, startDestination = "home") {
                         composable("home") {
                             when (val screen = vm.screen) {
-                                is Screen.Lists -> ListScreen(vm) { taskId, groupId -> vm.openEditor(taskId, groupId) }
-                                Screen.Settings -> SettingsScreen(vm)
-                                is Screen.Editor -> EditScreen(vm, screen.taskId, screen.originGroupId)
+                                is Screen.Lists -> ListScreen(vm, navScroll) { taskId, groupId -> vm.openEditor(taskId, groupId) }
+                                Screen.Settings -> SettingsScreen(vm, navScroll)
+                                is Screen.Editor -> EditScreen(vm, screen.taskId, screen.originGroupId, navScroll)
                             }
                         }
                     }

@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
@@ -84,7 +86,7 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
+fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: ScrollState) {
     val palette = LocalPalette.current
     val groups by vm.groups.collectAsState()
     val tasks by vm.tasks.collectAsState()
@@ -116,7 +118,7 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
     val group = groups.firstOrNull { it.id == groupId }
     val scheduled = kind == GroupKind.SCHEDULED
     val titleMissing = stringResource(R.string.error_title)
-    val gapError = stringResource(R.string.error_gap)
+    val gapPattern = stringResource(R.string.error_gap)
     val repeatInvalid = stringResource(R.string.error_repeat)
     fun confirm() {
         val trimmed = title.trim()
@@ -134,7 +136,7 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
             when {
                 parsed >= floor || unchangedPast -> fire = parsed
                 parsed == lastLegal.longValue -> fire = floor
-                else -> dueErrorText = gapError
+                else -> dueErrorText = gapPattern.format(DueRules.formatTime(floor))
             }
             if (repeatText.isNotEmpty()) {
                 val days = repeatText.toIntOrNull()
@@ -174,6 +176,7 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
             pinned = pinned,
             selectedId = null,
             settings = false,
+            scroll = navScroll,
             onGroup = { id -> vm.leaveToGroup(id) },
             onSettings = vm::leaveToSettings,
         )
@@ -274,27 +277,65 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long) {
             }
             if (linkError) Text(stringResource(R.string.link_failed), color = TasksColors.error, fontFamily = Manrope, fontSize = 13.sp)
             if (scheduled) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        DueRules.formatDate(due),
-                        color = TasksColors.text,
-                        fontFamily = Manrope,
-                        fontSize = 16.sp,
-                        modifier = Modifier.weight(1f).background(palette.cloud, RoundedCornerShape(12.dp)).clickable {
-                            dueErrorText = null
-                            showDate = true
-                        }.padding(12.dp),
-                    )
-                    Text(
-                        DueRules.formatTime(due),
-                        color = TasksColors.text,
-                        fontFamily = Manrope,
-                        fontSize = 16.sp,
-                        modifier = Modifier.weight(1f).background(palette.cloud, RoundedCornerShape(12.dp)).clickable {
-                            dueErrorText = null
-                            showTime = true
-                        }.padding(12.dp),
-                    )
+                val now = System.currentTimeMillis()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    StepButton(enabled = DueRules.shiftDay(due, -1, now) != null, right = false) {
+                        DueRules.shiftDay(due, -1, now)?.let { applyDue(it) }
+                        dueErrorText = null
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp)
+                            .background(palette.cloud, RoundedCornerShape(12.dp))
+                            .clickable {
+                                dueErrorText = null
+                                showDate = true
+                            }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            DueRules.formatDate(due),
+                            color = TasksColors.text,
+                            fontFamily = Manrope,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    StepButton(enabled = true, right = true) {
+                        DueRules.shiftDay(due, 1, now)?.let { applyDue(it) }
+                        dueErrorText = null
+                    }
+                    Box(Modifier.width(16.dp))
+                    StepButton(enabled = DueRules.canShiftHourLeft(due, now), right = false) {
+                        applyDue(DueRules.shiftHour(due, -1, now))
+                        dueErrorText = null
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp)
+                            .background(palette.cloud, RoundedCornerShape(12.dp))
+                            .clickable {
+                                dueErrorText = null
+                                showTime = true
+                            }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            DueRules.formatTime(due),
+                            color = TasksColors.text,
+                            fontFamily = Manrope,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    StepButton(enabled = true, right = true) {
+                        applyDue(DueRules.shiftHour(due, 1, now))
+                        dueErrorText = null
+                    }
                 }
                 dueErrorText?.let { FieldError(it) }
                 FieldLabel(stringResource(R.string.field_repeat))
@@ -378,6 +419,26 @@ private fun FieldLabel(text: String) {
 @Composable
 private fun FieldError(text: String) {
     Text(text, color = TasksColors.error, fontFamily = Manrope, fontSize = 13.sp)
+}
+
+@Composable
+private fun StepButton(enabled: Boolean, right: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(if (enabled) palette.cloud else palette.background)
+            .border(1.dp, if (enabled) palette.cloudBorder else palette.background, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (right) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+            contentDescription = null,
+            tint = if (enabled) TasksColors.text else TasksColors.muted,
+        )
+    }
 }
 
 private fun descriptionReady(scheduled: Boolean): Boolean = scheduled
