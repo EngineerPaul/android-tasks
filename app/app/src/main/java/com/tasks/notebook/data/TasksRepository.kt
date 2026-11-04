@@ -55,10 +55,16 @@ class TasksRepository(
         val previous = existingId?.let { id -> tasks.first { it.id == id } }
         val moved = previous != null && previous.groupId != group.id
         val sort = when {
-            moved && group.isPinnedScheduled() -> 0
+            group.isPinnedScheduled() -> 0
+            existingId == null -> 0
             moved -> order
             previous != null -> previous.sortOrder
             else -> order
+        }
+        if (existingId == null && !group.isPinnedScheduled()) {
+            inGroup.sortedBy { it.sortOrder }.forEachIndexed { index, task ->
+                dao.setTaskOrder(task.id, index + 1)
+            }
         }
         val item = TaskItem(
             id = existingId ?: 0,

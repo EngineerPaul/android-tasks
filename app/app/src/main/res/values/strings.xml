@@ -20,7 +20,7 @@
     <string name="error_title">Введите название</string>
     <string name="error_date">Укажите дату</string>
     <string name="error_time">Укажите время</string>
-    <string name="error_gap">Минимальное время — %1$s</string>
+    <string name="error_gap">Минимальное время — %1$s %2$s</string>
     <string name="error_repeat">Число от 1 до 999</string>
     <string name="link_failed">Нечем открыть ссылку</string>
     <string name="deleted_one">Задача удалена</string>
@@ -35,7 +35,7 @@
     <string name="kind_notes">Заметки</string>
     <string name="kind_reminders">Напоминания</string>
     <string name="window_name">Имя окна</string>
-    <string name="add_window">Добавить группу</string>
+    <string name="add_window">Добавить</string>
     <string name="new_window">Добавить группу</string>
     <string name="delete_window">Удалить окно «%1$s» вместе с задачами?</string>
     <string name="delete_confirm">Удалить</string>

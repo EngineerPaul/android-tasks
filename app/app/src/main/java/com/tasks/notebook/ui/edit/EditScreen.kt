@@ -136,7 +136,7 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: 
             when {
                 parsed >= floor || unchangedPast -> fire = parsed
                 parsed == lastLegal.longValue -> fire = floor
-                else -> dueErrorText = gapPattern.format(DueRules.formatTime(floor))
+                else -> dueErrorText = gapPattern.format(DueRules.formatDate(floor), DueRules.formatTime(floor))
             }
             if (repeatText.isNotEmpty()) {
                 val days = repeatText.toIntOrNull()
@@ -285,14 +285,14 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: 
                     }
                     Box(
                         Modifier
-                            .weight(1f)
+                            .weight(1.25f)
                             .padding(horizontal = 4.dp)
                             .background(palette.cloud, RoundedCornerShape(12.dp))
                             .clickable {
                                 dueErrorText = null
                                 showDate = true
                             }
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -426,10 +426,10 @@ private fun StepButton(enabled: Boolean, right: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .size(36.dp)
+            .size(30.dp)
             .clip(CircleShape)
-            .background(if (enabled) palette.cloud else palette.background)
-            .border(1.dp, if (enabled) palette.cloudBorder else palette.background, CircleShape)
+            .background(if (enabled) palette.cloud else androidx.compose.ui.graphics.Color.Transparent)
+            .border(1.dp, palette.cloudBorder, CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -437,6 +437,7 @@ private fun StepButton(enabled: Boolean, right: Boolean, onClick: () -> Unit) {
             if (right) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft,
             contentDescription = null,
             tint = if (enabled) TasksColors.text else TasksColors.muted,
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -453,7 +454,7 @@ private fun header(
 ): String {
     if (!scheduled) {
         val mine = tasks.filter { it.groupId == groupId }.sortedBy { it.sortOrder }
-        val index = if (existingId == null) mine.size else mine.indexOfFirst { it.id == existingId }.coerceAtLeast(0)
+        val index = if (existingId == null) 0 else mine.indexOfFirst { it.id == existingId }.coerceAtLeast(0)
         return "Задача ${index + 1}"
     }
     if (!ready || due == null) return "Напоминание"

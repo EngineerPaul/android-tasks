@@ -11,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -121,17 +120,9 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
         val gid = dragGroup
         val ids = dragIds
         if (dragId != null || gid == null || ids == null) return@LaunchedEffect
-        val page = pages.firstOrNull { it.id == gid }
-        val current = if (page == null) emptyList() else orderedTasks(tasks, page).map { it.id }
-        if (current == ids) {
-            dragGroup = null
-            dragIds = null
-        }
-    }
-    LaunchedEffect(dragId, dragGroup, dragIds) {
-        if (dragId != null || dragIds == null) return@LaunchedEffect
-        kotlinx.coroutines.delay(700)
-        if (dragId == null) {
+        val page = pages.firstOrNull { it.id == gid } ?: return@LaunchedEffect
+        val current = orderedTasks(tasks, page).map { it.id }
+        if (current.toSet() == ids.toSet()) {
             dragGroup = null
             dragIds = null
         }
@@ -143,12 +134,12 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
         }
     }
     fun visibleTasks(group: TaskGroup): List<TaskItem> {
-        val id = dragId
         val ids = dragIds
         val gid = dragGroup
-        if (id == null || ids == null || gid == null) return orderedTasks(tasks, group)
+        if (ids == null || gid == null) return orderedTasks(tasks, group)
         val byId = tasks.associateBy { it.id }
-        return if (group.id == gid) ids.mapNotNull { byId[it] } else orderedTasks(tasks, group).filter { it.id != id }
+        val held = ids.toSet()
+        return if (group.id == gid) ids.mapNotNull { byId[it] } else orderedTasks(tasks, group).filter { it.id !in held }
     }
     var boxOrigin by remember { mutableStateOf(Offset.Zero) }
     val originState = rememberUpdatedState(boxOrigin)
@@ -161,28 +152,44 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
                 val timeout = viewConfiguration.longPressTimeoutMillis.toLong()
                 val jump = 72.dp.toPx()
                 val row = 64.dp.toPx()
-                awaitEachGesture {
-                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-                    val origin = down.position
-                    val started = System.currentTimeMillis()
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
-                        if (!change.pressed) return@awaitEachGesture
-                        if ((change.position - origin).getDistance() > slop) return@awaitEachGesture
-                        if (System.currentTimeMillis() - started >= timeout) break
+                while (true) {
+                    val down = awaitPointerEventScope {
+                        awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                     }
+                    val origin = down.position
+                    var released = false
+                    var slipped = false
+                    kotlinx.coroutines.withTimeoutOrNull(timeout) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: run {
+                                    released = true
+                                    return@awaitPointerEventScope
+                                }
+                                if (!change.pressed) {
+                                    released = true
+                                    return@awaitPointerEventScope
+                                }
+                                if ((change.position - origin).getDistance() > slop) {
+                                    slipped = true
+                                    return@awaitPointerEventScope
+                                }
+                            }
+                        }
+                    }
+                    if (released || slipped) continue
                     val root = originState.value + origin
                     val hit = spots.entries.firstOrNull { (_, rect) ->
                         root.x in rect.left..rect.right && root.y in rect.top..rect.bottom
-                    } ?: return@awaitEachGesture
+                    } ?: continue
                     val taskId = hit.key
-                    val startGroup = latestTasks.value.firstOrNull { it.id == taskId }?.groupId ?: return@awaitEachGesture
-                    val startPage = latestPages.value.firstOrNull { it.id == startGroup } ?: return@awaitEachGesture
+                    val startGroup = latestTasks.value.firstOrNull { it.id == taskId }?.groupId ?: continue
+                    val startPage = latestPages.value.firstOrNull { it.id == startGroup } ?: continue
                     var groupId = startGroup
                     var ids = orderedTasks(latestTasks.value, startPage).map { it.id }.toMutableList()
                     var index = ids.indexOf(taskId)
-                    if (index < 0) return@awaitEachGesture
+                    if (index < 0) continue
                     val startIds = ids.toList()
                     dragId = taskId
                     dragGroup = groupId
@@ -190,68 +197,66 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
                     dragY = 0f
                     var accX = 0f
                     var accY = 0f
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
+                    var axis = 0
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                change.consume()
+                                break
+                            }
+                            val delta = change.position - change.previousPosition
+                            if (axis != 1) accX += delta.x
+                            if (axis != 2) accY += delta.y
                             change.consume()
-                            break
-                        }
-                        val delta = change.position - change.previousPosition
-                        accX += delta.x
-                        accY += delta.y
-                        change.consume()
-                        val pagesNow = latestPages.value
-                        val group = pagesNow.firstOrNull { it.id == groupId }
-                        if (abs(accX) > jump && abs(accX) > abs(accY) && group != null) {
-                            val dir = if (accX > 0f) 1 else -1
-                            val same = pagesNow.filter { it.kindEnum() == group.kindEnum() }
-                            val from = same.indexOfFirst { it.id == group.id }
-                            val target = same.getOrNull(from + dir)
-                            accX = 0f
-                            if (target != null) {
-                                val landing = if (target.isPinnedScheduled()) {
-                                    orderedTasks(latestTasks.value, target).map { it.id }
+                            val pagesNow = latestPages.value
+                            val group = pagesNow.firstOrNull { it.id == groupId }
+                            if (axis != 1 && abs(accX) > jump && abs(accX) > abs(accY) && group != null) {
+                                val dir = if (accX > 0f) 1 else -1
+                                val same = pagesNow.filter { it.kindEnum() == group.kindEnum() }
+                                val from = same.indexOfFirst { it.id == group.id }
+                                val target = same.getOrNull(from + dir)
+                                accX = 0f
+                                if (target != null) {
+                                    val landing = orderedTasks(latestTasks.value, target).map { it.id }
                                         .filter { it != taskId }
                                         .toMutableList()
                                         .also { it.add(0, taskId) }
-                                } else {
-                                    orderedTasks(latestTasks.value, target).map { it.id }
-                                        .filter { it != taskId }
-                                        .toMutableList()
-                                        .also { there -> there.add(index.coerceIn(0, there.size), taskId) }
+                                    ids = landing
+                                    index = 0
+                                    groupId = target.id
+                                    accY = 0f
+                                    dragY = 0f
+                                    axis = 2
+                                    dragGroup = groupId
+                                    dragIds = ids.toList()
+                                    vm.openGroup(target.id)
                                 }
-                                ids = landing
-                                index = ids.indexOf(taskId).coerceAtLeast(0)
-                                groupId = target.id
-                                accY = 0f
-                                dragY = 0f
-                                dragGroup = groupId
+                            } else if (axis != 2 && group != null && !group.isPinnedScheduled()) {
+                                var guard = 0
+                                while (guard++ < 64) {
+                                    val shift = when {
+                                        accY > row && index < ids.lastIndex -> 1
+                                        accY < -row && index > 0 -> -1
+                                        else -> 0
+                                    }
+                                    if (shift == 0) break
+                                    val moved = ids.removeAt(index)
+                                    index += shift
+                                    ids.add(index, moved)
+                                    accY -= shift * row
+                                    axis = 1
+                                }
                                 dragIds = ids.toList()
-                                vm.openGroup(target.id)
-                            }
-                        } else if (group != null && !group.isPinnedScheduled()) {
-                            var guard = 0
-                            while (guard++ < 64) {
-                                if (index == 0 && accY < 0f) accY = 0f
-                                if (index == ids.lastIndex && accY > 0f) accY = 0f
-                                val shift = when {
-                                    accY > row && index < ids.lastIndex -> 1
-                                    accY < -row && index > 0 -> -1
-                                    else -> 0
+                                dragY = when {
+                                    index == 0 && accY < 0f -> 0f
+                                    index == ids.lastIndex && accY > 0f -> 0f
+                                    else -> accY
                                 }
-                                if (shift == 0) break
-                                val moved = ids.removeAt(index)
-                                index += shift
-                                ids.add(index, moved)
-                                accY -= shift * row
+                            } else {
+                                dragY = 0f
                             }
-                            if (index == 0 && accY < 0f) accY = 0f
-                            if (index == ids.lastIndex && accY > 0f) accY = 0f
-                            dragIds = ids.toList()
-                            dragY = accY
-                        } else {
-                            dragY = 0f
                         }
                     }
                     val changed = groupId != startGroup || ids.toList() != startIds
@@ -282,7 +287,12 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
         val current = pages.getOrNull(pager.currentPage) ?: pages.first()
         AccentButton(stringResource(R.string.add), palette.accent, palette.onAccent, { onOpenTask(null, current.id) })
         PermissionBanner(current.kindEnum() == GroupKind.SCHEDULED, vm)
-        HorizontalPager(state = pager, userScrollEnabled = dragId == null, modifier = Modifier.weight(1f)) { page ->
+        HorizontalPager(
+            state = pager,
+            userScrollEnabled = dragId == null,
+            modifier = Modifier.weight(1f),
+            key = { pages[it].id },
+        ) { page ->
             val group = pages[page]
             TaskPage(
                 vm,
@@ -292,6 +302,7 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
                 dragId,
                 dragY,
                 spots,
+                dragIds != null,
                 onOpenTask,
             )
         }
@@ -446,6 +457,7 @@ private fun TaskPage(
     dragId: Long?,
     dragY: Float,
     spots: MutableMap<Long, Rect>,
+    suppressEmpty: Boolean,
     onOpenTask: (Long?, Long) -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -460,13 +472,15 @@ private fun TaskPage(
         }
     }
     if (tasks.isEmpty()) {
-        Text(
-            stringResource(R.string.empty_tasks),
-            color = TasksColors.secondary,
-            fontFamily = Manrope,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-        )
+        if (!suppressEmpty) {
+            Text(
+                stringResource(R.string.empty_tasks),
+                color = TasksColors.secondary,
+                fontFamily = Manrope,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
+        }
         return
     }
     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize().padding(top = 12.dp, bottom = 8.dp)) {

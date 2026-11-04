@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,60 +105,80 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
                     val slop = viewConfiguration.touchSlop
                     val timeout = viewConfiguration.longPressTimeoutMillis.toLong()
                     val gap = 10.dp.toPx()
-                    awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-                        val origin = down.position
-                        val started = System.currentTimeMillis()
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
-                            if (!change.pressed) return@awaitEachGesture
-                            if ((change.position - origin).getDistance() > slop) return@awaitEachGesture
-                            if (System.currentTimeMillis() - started >= timeout) break
+                    while (true) {
+                        val down = awaitPointerEventScope {
+                            awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                         }
+                        val origin = down.position
+                        var released = false
+                        var slipped = false
+                        kotlinx.coroutines.withTimeoutOrNull(timeout) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: run {
+                                        released = true
+                                        return@awaitPointerEventScope
+                                    }
+                                    if (!change.pressed) {
+                                        released = true
+                                        return@awaitPointerEventScope
+                                    }
+                                    if ((change.position - origin).getDistance() > slop) {
+                                        slipped = true
+                                        return@awaitPointerEventScope
+                                    }
+                                }
+                            }
+                        }
+                        if (released || slipped) continue
                         val hit = rowBounds.entries.firstOrNull { (_, span) ->
                             origin.y >= span.first && origin.y <= span.second
-                        }?.key ?: return@awaitEachGesture
+                        }?.key ?: continue
                         val order = idsState.value.toMutableList()
                         var index = order.indexOf(hit)
-                        if (index < 0) return@awaitEachGesture
-                        val span = rowBounds[hit] ?: return@awaitEachGesture
+                        if (index < 0) continue
+                        val span = rowBounds[hit] ?: continue
                         val row = (span.second - span.first) + gap
                         lifted = hit
                         liftY = 0f
                         var accY = 0f
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                change.consume()
-                                break
-                            }
-                            accY += (change.position - change.previousPosition).y
-                            change.consume()
-                            var guard = 0
-                            while (guard++ < 64) {
-                                val last = order.lastIndex
-                                if (index == 0 && accY < 0f) accY = 0f
-                                if (index == last && accY > 0f) accY = 0f
-                                if (accY > row && index < last) {
-                                    val next = order[index + 1]
-                                    order[index + 1] = order[index]
-                                    order[index] = next
-                                    index += 1
-                                    accY -= row
-                                } else if (accY < -row && index > 0) {
-                                    val prev = order[index - 1]
-                                    order[index - 1] = order[index]
-                                    order[index] = prev
-                                    index -= 1
-                                    accY += row
-                                } else {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
                                     break
                                 }
+                                accY += (change.position - change.previousPosition).y
+                                change.consume()
+                                var guard = 0
+                                while (guard++ < 64) {
+                                    val last = order.lastIndex
+                                    if (accY > row && index < last) {
+                                        val next = order[index + 1]
+                                        order[index + 1] = order[index]
+                                        order[index] = next
+                                        index += 1
+                                        accY -= row
+                                    } else if (accY < -row && index > 0) {
+                                        val prev = order[index - 1]
+                                        order[index - 1] = order[index]
+                                        order[index] = prev
+                                        index -= 1
+                                        accY += row
+                                    } else {
+                                        break
+                                    }
+                                }
+                                draft = order.toList()
+                                liftY = when {
+                                    index == 0 && accY < 0f -> 0f
+                                    index == order.lastIndex && accY > 0f -> 0f
+                                    else -> accY
+                                }
                             }
-                            draft = order.toList()
-                            liftY = accY
                         }
                         vm.reorderWindows(order)
                         draft = null
@@ -399,12 +418,6 @@ private fun WindowRow(
                 }
                 Text(group.name, color = TasksColors.text, fontFamily = Manrope)
             }
-            Text(
-                stringResource(if (group.kindEnum() == GroupKind.SCHEDULED) R.string.kind_reminders else R.string.kind_notes),
-                color = TasksColors.muted,
-                fontFamily = Manrope,
-                fontSize = 12.sp,
-            )
         }
         if (!group.isPinnedScheduled()) {
             androidx.compose.material3.Icon(
