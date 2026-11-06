@@ -43,4 +43,5 @@ data class TaskItem(
     val repeatEveryDays: Int?,
     val notifiedOnce: Boolean,
     val dueUnseen: Boolean,
+    val createdAt: Long = 0,
 )

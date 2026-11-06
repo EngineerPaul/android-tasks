@@ -77,6 +77,7 @@ class TasksRepository(
             repeatEveryDays = if (group.kindEnum() == GroupKind.SCHEDULED) draft.repeatEveryDays else null,
             notifiedOnce = false,
             dueUnseen = false,
+            createdAt = previous?.createdAt ?: System.currentTimeMillis(),
         )
         val id = if (existingId == null) {
             dao.insertTask(item)

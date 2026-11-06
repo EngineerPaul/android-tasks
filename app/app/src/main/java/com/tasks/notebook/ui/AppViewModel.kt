@@ -137,11 +137,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         undo = emptyList()
     }
 
-    fun save(existingId: Long?, draft: TaskDraft) {
+    var vibrationOn by mutableStateOf(TaskAlarm.vibrationEnabled(app))
+        private set
+
+    fun updateVibration(enabled: Boolean) {
+        vibrationOn = enabled
+        TaskAlarm.setVibration(getApplication(), enabled)
+    }
+
+    fun save(existingId: Long?, draft: TaskDraft, close: Boolean = true) {
         viewModelScope.launch {
             val id = repo.saveTask(existingId, draft)
-            screen = Screen.Lists(draft.groupId)
             if (existingId == null) highlightId = id
+            if (close) screen = Screen.Lists(draft.groupId)
         }
     }
 

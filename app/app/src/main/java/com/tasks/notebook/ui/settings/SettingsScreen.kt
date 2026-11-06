@@ -1,5 +1,7 @@
 package com.tasks.notebook.ui.settings
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -285,6 +288,17 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
                 Text(stringResource(R.string.theme), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
                 Text(paletteName(vm.paletteId), color = palette.accent, fontFamily = Manrope)
             }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.cloud)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.vibration), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
+                SlideSwitch(vm.vibrationOn) { vm.updateVibration(!vm.vibrationOn) }
+            }
         }
     }
     rename?.let { group ->
@@ -427,6 +441,29 @@ private fun WindowRow(
                 modifier = Modifier.size(28.dp).clickable(onClick = onDelete),
             )
         }
+    }
+}
+
+@Composable
+private fun SlideSwitch(on: Boolean, onToggle: () -> Unit) {
+    val palette = LocalPalette.current
+    val travel by animateDpAsState(if (on) 24.dp else 0.dp, tween(180), label = "vibrate")
+    Box(
+        Modifier
+            .width(52.dp)
+            .height(28.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (on) palette.accent else palette.background)
+            .border(1.dp, if (on) palette.accent else palette.cloudBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onToggle),
+    ) {
+        Box(
+            Modifier
+                .offset(x = travel + 2.dp, y = 2.dp)
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(if (on) palette.onAccent else TasksColors.secondary),
+        )
     }
 }
 

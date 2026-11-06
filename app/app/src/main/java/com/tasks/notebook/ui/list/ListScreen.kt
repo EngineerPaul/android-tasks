@@ -128,7 +128,7 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
         }
     }
     LaunchedEffect(pager, pages) {
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
+        snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { page ->
             val group = pages.getOrNull(page) ?: return@collect
             if ((vm.screen as? com.tasks.notebook.ui.Screen.Lists)?.groupId != group.id) vm.openGroup(group.id)
         }
@@ -280,7 +280,7 @@ fun ListScreen(vm: AppViewModel, navScroll: ScrollState, onOpenTask: (Long?, Lon
             selectedId = selected,
             settings = false,
             scroll = navScroll,
-            centerGroupId = if (vm.highlightId >= 0) selected else null,
+            centerGroupId = selected,
             onGroup = vm::openGroup,
             onSettings = vm::openSettings,
         )
@@ -421,14 +421,21 @@ private fun PermissionBanner(scheduled: Boolean, vm: AppViewModel) {
     val context = LocalContext.current
     val notify = TaskAlarm.canNotify(context)
     val exact = TaskAlarm.canScheduleExact(context)
+    val battery = TaskAlarm.ignoresBattery(context)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshAlarms()
     }
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33 && !notify) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    if (notify && exact) return
-    val text = stringResource(if (!notify) R.string.notifications_off else R.string.alarms_off)
+    if (notify && exact && battery) return
+    val text = stringResource(
+        when {
+            !notify -> R.string.notifications_off
+            !exact -> R.string.alarms_off
+            else -> R.string.battery_off
+        },
+    )
     val palette = LocalPalette.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -441,8 +448,16 @@ private fun PermissionBanner(scheduled: Boolean, vm: AppViewModel) {
             fontFamily = Manrope,
             fontSize = 13.sp,
             modifier = Modifier.clickable {
-                val intent = if (!notify) TaskAlarm.notificationSettings(context) else TaskAlarm.exactAlarmSettings(context)
-                context.startActivity(intent)
+                val intent = when {
+                    !notify -> TaskAlarm.notificationSettings(context)
+                    !exact -> TaskAlarm.exactAlarmSettings(context)
+                    else -> TaskAlarm.batterySettings(context)
+                }
+                try {
+                    context.startActivity(intent)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
             },
         )
     }
