@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openTask(vm: AppViewModel, intent: Intent?) {
-        val id = intent?.getLongExtra(TaskAlarm.EXTRA_TASK_ID, -1L) ?: -1L
+        val id = TaskAlarm.openId(intent)
         if (id >= 0) vm.openFromNotification(id)
     }
 }

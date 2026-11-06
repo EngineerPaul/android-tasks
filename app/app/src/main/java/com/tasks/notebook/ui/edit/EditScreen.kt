@@ -45,9 +45,11 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -113,6 +115,7 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: 
     var showDate by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
     var fieldHeight by remember { mutableIntStateOf(0) }
+    var hydrated by remember(taskId) { mutableStateOf(existing != null || taskId == null) }
     val formScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val lastLegal = remember(taskId) { mutableLongStateOf(existing?.nextFireAt ?: initialDue) }
@@ -178,7 +181,24 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: 
         }
     }
 
+    LaunchedEffect(taskId, existing?.id) {
+        val item = existing ?: return@LaunchedEffect
+        if (hydrated) return@LaunchedEffect
+        title = item.title
+        descriptionValue = TextFieldValue(item.description)
+        rating = item.rating
+        groupId = item.groupId
+        val at = item.nextFireAt ?: DueRules.defaultDue(System.currentTimeMillis())
+        due = at
+        lastLegal.longValue = at
+        repeatText = item.repeatEveryDays?.toString().orEmpty()
+        hydrated = true
+    }
     BackHandler { vm.closeEditor() }
+    if (taskId != null && !hydrated) {
+        Box(Modifier.fillMaxSize().background(palette.background))
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(palette.background).statusBarsPadding()) {
         val scrollable = groups.filter { !it.isPinnedScheduled() }.sortedBy { it.sortOrder }
@@ -417,16 +437,25 @@ fun EditScreen(vm: AppViewModel, taskId: Long?, originGroupId: Long, navScroll: 
     if (showTime) {
         val local = java.time.Instant.ofEpochMilli(due).atZone(java.time.ZoneId.systemDefault())
         val state = rememberTimePickerState(local.hour, local.minute, true)
-        DatePickerDialog(
-            onDismissRequest = { showTime = false },
-            confirmButton = {
+        Dialog(onDismissRequest = { showTime = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .background(palette.cloud, RoundedCornerShape(20.dp))
+                    .padding(top = 12.dp, bottom = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state)
+                }
                 TextButton(onClick = {
                     val updated = local.toLocalDate().atTime(state.hour, state.minute)
                     applyDue(updated.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
                     showTime = false
-                }) { Text(stringResource(R.string.save)) }
-            },
-        ) { TimePicker(state) }
+                }) { Text(stringResource(R.string.save), color = TasksColors.text) }
+            }
+        }
     }
 }
 

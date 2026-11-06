@@ -14,8 +14,8 @@ android {
         applicationId = "com.tasks.notebook"
         minSdk = 26
         targetSdk = 37
-        versionCode = 12
-        versionName = "1.11"
+        versionCode = 19
+        versionName = "1.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

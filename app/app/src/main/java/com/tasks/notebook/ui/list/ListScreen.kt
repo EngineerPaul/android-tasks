@@ -36,8 +36,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -422,18 +424,56 @@ private fun PermissionBanner(scheduled: Boolean, vm: AppViewModel) {
     val notify = TaskAlarm.canNotify(context)
     val exact = TaskAlarm.canScheduleExact(context)
     val battery = TaskAlarm.ignoresBattery(context)
+    var autostart by remember { mutableStateOf(TaskAlarm.autostartAsked(context)) }
+    var explainAutostart by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshAlarms()
     }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33 && !notify) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    LaunchedEffect(notify, exact, battery, autostart) {
+        if (Build.VERSION.SDK_INT >= 33 && !notify) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return@LaunchedEffect
+        }
+        if (notify && exact && battery && !autostart) {
+            explainAutostart = true
+        }
     }
-    if (notify && exact && battery) return
+    if (explainAutostart) {
+        AlertDialog(
+            onDismissRequest = { explainAutostart = false },
+            title = {
+                Text(stringResource(R.string.autostart_title), color = TasksColors.text, fontFamily = Manrope)
+            },
+            text = {
+                Text(stringResource(R.string.autostart_why), color = TasksColors.text, fontFamily = Manrope)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    explainAutostart = false
+                    TaskAlarm.markAutostartAsked(context)
+                    autostart = true
+                    try {
+                        TaskAlarm.openAutostart(context)
+                    } catch (_: Exception) {
+                    }
+                }) {
+                    Text(stringResource(R.string.open_settings), color = TasksColors.text, fontFamily = Manrope)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { explainAutostart = false }) {
+                    Text(stringResource(R.string.cancel), color = TasksColors.text, fontFamily = Manrope)
+                }
+            },
+        )
+    }
+    if (notify && exact && battery && autostart) return
     val text = stringResource(
         when {
             !notify -> R.string.notifications_off
             !exact -> R.string.alarms_off
-            else -> R.string.battery_off
+            !battery -> R.string.battery_off
+            else -> R.string.autostart_off
         },
     )
     val palette = LocalPalette.current
@@ -448,13 +488,13 @@ private fun PermissionBanner(scheduled: Boolean, vm: AppViewModel) {
             fontFamily = Manrope,
             fontSize = 13.sp,
             modifier = Modifier.clickable {
-                val intent = when {
-                    !notify -> TaskAlarm.notificationSettings(context)
-                    !exact -> TaskAlarm.exactAlarmSettings(context)
-                    else -> TaskAlarm.batterySettings(context)
-                }
                 try {
-                    context.startActivity(intent)
+                    when {
+                        !notify -> context.startActivity(TaskAlarm.notificationSettings(context))
+                        !exact -> context.startActivity(TaskAlarm.exactAlarmSettings(context))
+                        !battery -> context.startActivity(TaskAlarm.batterySettings(context))
+                        else -> explainAutostart = true
+                    }
                 } catch (_: android.content.ActivityNotFoundException) {
                     context.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }

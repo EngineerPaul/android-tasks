@@ -85,6 +85,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openFromNotification(taskId: Long) {
         viewModelScope.launch {
             val task = repo.task(taskId) ?: return@launch
+            repo.clearUnseen(task.id)
             screen = Screen.Editor(task.id, task.groupId)
         }
     }

@@ -146,6 +146,7 @@ class TasksRepository(
 
     suspend fun clearUnseen(id: Long) {
         dao.setUnseen(id, false)
+        TaskAlarm.dismiss(context, id)
     }
 
     suspend fun markFired(id: Long, nextFireAt: Long?, unseen: Boolean, notifiedOnce: Boolean) {
@@ -155,7 +156,7 @@ class TasksRepository(
     suspend fun markArrived(now: Long) {
         dao.tasks().filter { task ->
             val at = task.nextFireAt
-            at != null && at <= now && !task.dueUnseen
+            at != null && at <= now && !task.dueUnseen && !task.notifiedOnce
         }.forEach { dao.setUnseen(it.id, true) }
     }
 

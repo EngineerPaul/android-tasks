@@ -33,6 +33,9 @@
     <string name="notifications_off">Уведомления выключены</string>
     <string name="alarms_off">Точные будильники выключены</string>
     <string name="battery_off">Разрешите работу без ограничения батареи, иначе закрытое приложение не напомнит</string>
+    <string name="autostart_off">Включите автозапуск, иначе закрытое приложение не напомнит</string>
+    <string name="autostart_title">Автозапуск</string>
+    <string name="autostart_why">Автозапуск нужен, чтобы напоминание пришло, когда приложение закрыто. Без него телефон останавливает Tasks, и уведомление не срабатывает.</string>
     <string name="open_settings">Открыть настройки</string>
     <string name="settings_windows">Окна</string>
     <string name="kind_notes">Заметки</string>

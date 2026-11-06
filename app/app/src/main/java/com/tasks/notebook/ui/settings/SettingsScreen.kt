@@ -54,6 +54,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tasks.notebook.R
 import com.tasks.notebook.data.GroupKind
+import com.tasks.notebook.notifications.TaskAlarm
 import com.tasks.notebook.data.TaskGroup
 import com.tasks.notebook.ui.AppViewModel
 import com.tasks.notebook.ui.ChecklistMark
@@ -83,6 +85,8 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
     var pendingDelete by remember { mutableStateOf<TaskGroup?>(null) }
     var themeOpen by remember { mutableStateOf(false) }
     var languageOpen by remember { mutableStateOf(false) }
+    var autostartOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     var draft by remember { mutableStateOf<List<Long>?>(null) }
     var lifted by remember { mutableStateOf<Long?>(null) }
     var liftY by remember { mutableFloatStateOf(0f) }
@@ -274,7 +278,7 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.language), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
-                Text(stringResource(R.string.language_value), color = palette.accent, fontFamily = Manrope)
+                Text(stringResource(R.string.language_value), color = TasksColors.text, fontFamily = Manrope)
             }
             Row(
                 Modifier
@@ -286,7 +290,7 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.theme), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
-                Text(paletteName(vm.paletteId), color = palette.accent, fontFamily = Manrope)
+                Text(paletteName(vm.paletteId), color = TasksColors.text, fontFamily = Manrope)
             }
             Row(
                 Modifier
@@ -298,6 +302,18 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
             ) {
                 Text(stringResource(R.string.vibration), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
                 SlideSwitch(vm.vibrationOn) { vm.updateVibration(!vm.vibrationOn) }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.cloud)
+                    .clickable { autostartOpen = true }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.autostart_title), color = TasksColors.text, fontFamily = Manrope, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.open_settings), color = TasksColors.text, fontFamily = Manrope)
             }
         }
     }
@@ -346,12 +362,41 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
             text = {
                 Text(
                     stringResource(R.string.language_value),
-                    color = palette.accent,
+                    color = TasksColors.text,
                     fontFamily = Manrope,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.fillMaxWidth().clickable { languageOpen = false }.padding(vertical = 10.dp),
                 )
             },
             confirmButton = {},
+        )
+    }
+    if (autostartOpen) {
+        AlertDialog(
+            onDismissRequest = { autostartOpen = false },
+            title = {
+                Text(stringResource(R.string.autostart_title), color = TasksColors.text, fontFamily = Manrope)
+            },
+            text = {
+                Text(stringResource(R.string.autostart_why), color = TasksColors.text, fontFamily = Manrope)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    autostartOpen = false
+                    TaskAlarm.markAutostartAsked(context)
+                    try {
+                        TaskAlarm.openAutostart(context)
+                    } catch (_: Exception) {
+                    }
+                }) {
+                    Text(stringResource(R.string.open_settings), color = TasksColors.text, fontFamily = Manrope)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { autostartOpen = false }) {
+                    Text(stringResource(R.string.cancel), color = TasksColors.text, fontFamily = Manrope)
+                }
+            },
         )
     }
     if (themeOpen) {
@@ -363,8 +408,9 @@ fun SettingsScreen(vm: AppViewModel, navScroll: ScrollState) {
                     Palettes.all.forEach { item ->
                         Text(
                             paletteName(item.id),
-                            color = if (item.id == vm.paletteId) palette.accent else TasksColors.text,
+                            color = TasksColors.text,
                             fontFamily = Manrope,
+                            fontWeight = if (item.id == vm.paletteId) FontWeight.SemiBold else FontWeight.Normal,
                             modifier = Modifier.fillMaxWidth().clickable {
                                 vm.selectPalette(item.id)
                                 themeOpen = false
